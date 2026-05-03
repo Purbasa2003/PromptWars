@@ -3107,6 +3107,24 @@
             document.getElementById('diya-input').value = text;
             sendDiyaMessage();
         }
+
+        function appendDiyaMsg(role, text) {
+            const container = document.getElementById('diya-messages');
+            if (!container) return;
+            const div = document.createElement('div');
+            div.className = 'diya-' + role + (role === 'bot' ? ' diya-bot-last' : '');
+            
+            if (role === 'user') {
+                div.style.cssText = 'align-self:flex-end; background:var(--saffron); color:#000; padding:10px 14px; border-radius:15px 15px 0 15px; margin-bottom:10px; max-width:85%; font-size:13px; font-weight:600; box-shadow:0 4px 15px rgba(255,153,51,0.2); animation: slideInRight 0.3s ease;';
+            } else {
+                div.style.cssText = 'align-self:flex-start; background:rgba(255,255,255,0.07); color:#fff; padding:10px 14px; border-radius:15px 15px 15px 0; margin-bottom:10px; max-width:85%; font-size:13px; border-left:3px solid var(--india-green); box-shadow:0 4px 15px rgba(0,0,0,0.2); line-height:1.5; animation: slideInLeft 0.3s ease;';
+            }
+            
+            div.innerText = text;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
         async function sendDiyaMessage() {
             const input = document.getElementById('diya-input');
             const msg = input.value.trim();
@@ -3115,23 +3133,35 @@
             appendDiyaMsg('user', msg);
             appendDiyaMsg('bot', '🙏 Thinking...');
             try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                const key = window.GEMINI_API_KEY || '';
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         systemInstruction: { parts: [{ text: `You are DIYA (Democratic India Your Assistant), an expert and enthusiastic AI guide on Indian elections, voting rights, civic duties, and the Indian Constitution. You speak warmly, use relevant emojis, and give accurate, concise answers. The player is named ${player.name} and is from ${player.state}. Always connect answers to real Indian election facts.` }] },
-                        contents: [{ parts: [{ text: msg }] }]
+                        contents: [{ role: 'user', parts: [{ text: msg }] }]
                     })
                 });
                 const d = await res.json();
                 const lastBot = document.querySelector('#diya-messages .diya-bot-last');
                 if (lastBot) lastBot.remove();
+
+                if (d.error) {
+                    if (d.error.status === 'RESOURCE_EXHAUSTED') {
+                        appendDiyaMsg('bot', '🙏 I have reached my daily limit for today! Please try again in a while or check back tomorrow. 🇮🇳');
+                    } else {
+                        appendDiyaMsg('bot', '🙏 I am having a moment. Please try again!');
+                    }
+                    return;
+                }
+
                 const responseText = d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts ? d.candidates[0].content.parts[0].text : '🙏 I am having trouble connecting. Please try again!';
                 appendDiyaMsg('bot', responseText.trim());
             } catch (e) {
                 const lastBot = document.querySelector('#diya-messages .diya-bot-last');
                 if (lastBot) lastBot.remove();
                 appendDiyaMsg('bot', '🙏 I am having trouble connecting. Please try again!');
+                console.error('DIYA Error:', e);
             }
         }
         function spawnConfetti(count = 100) {
@@ -4350,11 +4380,19 @@
             content.classList.add('shimmer-text');
             document.getElementById('btn-download').style.display = 'none';
             try {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: `The player just completed a voting education game in ${Math.floor(timeInSeconds / 60)}m ${timeInSeconds % 60}s. They are ${player.name} from ${player.state}. They scored ${player.quizScore}/3 in the civics quiz and reached Level ${player.level}. Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis.` }] }] }) });
+                const key = window.GEMINI_API_KEY || '';
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `The player just completed a voting education game in ${Math.floor(timeInSeconds / 60)}m ${timeInSeconds % 60}s. They are ${player.name} from ${player.state}. They scored ${player.quizScore}/3 in the civics quiz and reached Level ${player.level}. Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis.` }] }] }) });
                 const d = await res.json();
                 content.classList.remove('shimmer-text');
                 content.style.fontWeight = 'normal';
                 content.style.textAlign = 'left';
+                
+                if (d.error) {
+                    content.innerHTML = 'Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. 🇮🇳';
+                    document.getElementById('btn-download').style.display = 'flex';
+                    return;
+                }
+
                 const reportText = d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts ? d.candidates[0].content.parts[0].text : 'Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. 🇮🇳';
                 content.innerHTML = reportText.replace(/\n/g, '<br>');
                 document.getElementById('btn-download').style.display = 'flex';
@@ -4362,6 +4400,7 @@
                 content.classList.remove('shimmer-text');
                 content.innerHTML = 'Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. 🇮🇳';
                 document.getElementById('btn-download').style.display = 'flex';
+                console.error('Report Gen Error:', e);
             }
         }
 
