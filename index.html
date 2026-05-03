@@ -3108,6 +3108,17 @@
             sendDiyaMessage();
         }
 
+        const LOCAL_DIYA_ANSWERS = {
+            "register": "To register to vote in India, you must be a citizen aged 18 or above. You can register online via the National Voters' Service Portal (NVSP) at nvsp.in or use the Voter Helpline App. You'll need to fill Form 6! 📝",
+            "evm": "Electronic Voting Machines (EVMs) are used in Indian elections to cast and count votes. They are secure, standalone machines that don't need internet. Each EVM has a Balloting Unit and a Control Unit! 🗳️",
+            "nota": "None of the Above (NOTA) is an option on the ballot that allows you to officially register a vote of rejection for all candidates. It ensures your right to say 'none of these'! ❌",
+            "state": "Each state in India has its own State Election Commission. Elections happen every 5 years to elect members of the Legislative Assembly (MLA). Your vote decides your local government! 🏛️",
+            "constitution": "The Indian Constitution is the supreme law of India, adopted on Nov 26, 1949. It guarantees fundamental rights and establishes India as a sovereign, democratic republic! 📜",
+            "age": "In India, the minimum age to vote is 18 years. This was changed from 21 to 18 by the 61st Amendment Act in 1988! 🎂",
+            "id": "Besides the Voter ID (EPIC), you can use 12 alternative documents like Aadhaar, PAN Card, or Driving License to prove your identity at the polling station! 🆔",
+            "vvpat": "VVPAT (Voter Verifiable Paper Audit Trail) is a machine connected to the EVM that prints a slip showing who you voted for. You can see it for 7 seconds through a glass window! 📄"
+        };
+
         function appendDiyaMsg(role, text) {
             const container = document.getElementById('diya-messages');
             if (!container) return;
@@ -3132,13 +3143,36 @@
             input.value = '';
             appendDiyaMsg('user', msg);
             appendDiyaMsg('bot', '🙏 Thinking...');
+
+            // 1. Smart Keyword Fallback (Saves API Quota)
+            const lowMsg = msg.toLowerCase();
+            let fallbackAnswer = null;
+            if (lowMsg.includes('register')) fallbackAnswer = LOCAL_DIYA_ANSWERS.register;
+            else if (lowMsg.includes('evm')) fallbackAnswer = LOCAL_DIYA_ANSWERS.evm;
+            else if (lowMsg.includes('nota')) fallbackAnswer = LOCAL_DIYA_ANSWERS.nota;
+            else if (lowMsg.includes('state')) fallbackAnswer = LOCAL_DIYA_ANSWERS.state;
+            else if (lowMsg.includes('constitution')) fallbackAnswer = LOCAL_DIYA_ANSWERS.constitution;
+            else if (lowMsg.includes('age') || lowMsg.includes('18')) fallbackAnswer = LOCAL_DIYA_ANSWERS.age;
+            else if (lowMsg.includes('id') || lowMsg.includes('identity')) fallbackAnswer = LOCAL_DIYA_ANSWERS.id;
+            else if (lowMsg.includes('vvpat')) fallbackAnswer = LOCAL_DIYA_ANSWERS.vvpat;
+
+            if (fallbackAnswer) {
+                setTimeout(() => {
+                    const lastBot = document.querySelector('#diya-messages .diya-bot-last');
+                    if (lastBot) lastBot.remove();
+                    appendDiyaMsg('bot', fallbackAnswer);
+                }, 600);
+                return;
+            }
+
+            // 2. API Call (If no fallback found)
             try {
                 const key = window.GEMINI_API_KEY || '';
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        systemInstruction: { parts: [{ text: `You are DIYA (Democratic India Your Assistant), an expert and enthusiastic AI guide on Indian elections, voting rights, civic duties, and the Indian Constitution. You speak warmly, use relevant emojis, and give accurate, concise answers. The player is named ${player.name} and is from ${player.state}. Always connect answers to real Indian election facts.` }] },
+                        systemInstruction: { parts: [{ text: `You are DIYA (Democratic India Your Assistant), an expert AI guide on Indian elections. The player is ${player.name} from ${player.state}. Keep answers concise and helpful.` }] },
                         contents: [{ role: 'user', parts: [{ text: msg }] }]
                     })
                 });
@@ -3147,11 +3181,10 @@
                 if (lastBot) lastBot.remove();
 
                 if (d.error) {
-                    if (d.error.status === 'RESOURCE_EXHAUSTED') {
-                        appendDiyaMsg('bot', '🙏 I have reached my daily limit for today! Please try again in a while or check back tomorrow. 🇮🇳');
-                    } else {
-                        appendDiyaMsg('bot', '🙏 I am having a moment. Please try again!');
-                    }
+                    // 3. Quota Fallback (If API is limited)
+                    const facts = Object.values(LOCAL_DIYA_ANSWERS);
+                    const randomFact = facts[Math.floor(Math.random() * facts.length)];
+                    appendDiyaMsg('bot', `I'm receiving a lot of queries right now! While I reconnect, here's a fact: ${randomFact}`);
                     return;
                 }
 
