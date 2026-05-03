@@ -1,17 +1,21 @@
 /**
  * ai.js - Gemini AI API calls via backend proxy
  * DEMOKRATIC Election Education Game
- * 
+ *
  * This file handles all AI-generated content: facts, news, quizzes,
  * dialogue, reports, and the DIYA chat assistant.
  * All calls go through the backend proxy at /api/gemini for security.
  */
 
-// API endpoint (backend proxy)
+// API endpoint (backend proxy — API key never exposed to client)
 const API_ENDPOINT = '/api/gemini';
 
-// Default model to use
+// Default model
 const DEFAULT_MODEL = 'gemini-1.5-flash';
+
+// Maximum prompt lengths to prevent abuse
+const MAX_PROMPT_LENGTH = 2000;
+const MAX_USER_MSG_LENGTH = 500;
 
 import { player } from './gameState.js';
 
@@ -20,12 +24,14 @@ import { player } from './gameState.js';
 // ============================================
 
 const FALLBACK_FACTS = [
-    "India's first general election was held in 1951-52 — the largest democratic exercise in history at the time.",
-    "The Election Commission of India was established on January 25, 1950, just a day before India became a republic.",
+    "India's first general election (1951-52) was the largest democratic exercise in history at the time.",
+    "The Election Commission of India was established on January 25, 1950, a day before India became a republic.",
     "VVPAT machines were first used in India in the 2014 general elections.",
     "The 2019 Indian general election had over 900 million eligible voters.",
     "Indelible ink was first used in India's 1962 general elections.",
-    "The EVM was first used on a trial basis in 1982 in Kerala."
+    "The EVM was first used on a trial basis in 1982 in Kerala.",
+    "India has over 1 million polling stations across the country.",
+    "The Model Code of Conduct comes into effect the moment election dates are announced by ECI."
 ];
 
 const FALLBACK_NEWS = [
@@ -46,45 +52,81 @@ const LOCAL_DIYA_ANSWERS = {
     "constitution": "The Indian Constitution is the supreme law of India, adopted on Nov 26, 1949. It guarantees fundamental rights and establishes India as a sovereign, democratic republic! 📜",
     "age": "In India, the minimum age to vote is 18 years. This was changed from 21 to 18 by the 61st Amendment Act in 1988! 🎂",
     "id": "Besides the Voter ID (EPIC), you can use 12 alternative documents like Aadhaar, PAN Card, or Driving License to prove your identity at the polling station! 🆔",
-    "vvpat": "VVPAT (Voter Verifiable Paper Audit Trail) is a machine connected to the EVM that prints a slip showing who you voted for. You can see it for 7 seconds through a glass window! 📄"
+    "vvpat": "VVPAT (Voter Verifiable Paper Audit Trail) is a machine connected to the EVM that prints a slip showing who you voted for. You can see it for 7 seconds through a glass window! 📄",
+    "form 6": "Form 6 is the application form for new voter registration in India. You can submit it online at nvsp.in or at your local Electoral Registration Office. Required documents: proof of age, address, and a passport photo. 📝",
+    "epic": "EPIC stands for Electors Photo Identity Card — your Voter ID card. Introduced in 1993 by Chief Election Commissioner T.N. Seshan to reduce electoral fraud. Apply online at nvsp.in! 🪪",
+    "model code": "The Model Code of Conduct (MCC) is a set of guidelines issued by the ECI to regulate political parties and candidates during elections. It kicks in the moment election dates are announced! ⚖️",
+    "article 326": "Article 326 of the Indian Constitution guarantees the right to vote to all adult citizens (18+), establishing universal adult suffrage as the basis of elections. 📜"
 };
+
+// ============================================
+// INPUT SANITIZATION
+// ============================================
+
+/**
+ * Sanitize a text string to prevent injection
+ * @param {string} text
+ * @param {number} maxLength
+ * @returns {string}
+ */
+function sanitizeText(text, maxLength = MAX_PROMPT_LENGTH) {
+    if (typeof text !== 'string') return '';
+    // Strip HTML tags and limit length
+    return text
+        .replace(/<[^>]*>/g, '')
+        .replace(/[^\w\s.,!?'\-:()]/g, ' ')
+        .trim()
+        .slice(0, maxLength);
+}
 
 // ============================================
 // GEMINI API CALL WRAPPER
 // ============================================
 
-async function callGeminiAPI(prompt, model = DEFAULT_MODEL, responseFormat = null) {
+/**
+ * Call the Gemini API via the secure backend proxy.
+ * @param {string} prompt
+ * @param {string} model
+ * @param {string|null} responseFormat
+ * @param {string|null} systemInstruction
+ * @returns {Promise<string|null>}
+ */
+async function callGeminiAPI(prompt, model = DEFAULT_MODEL, responseFormat = null, systemInstruction = null) {
     try {
+        const sanitizedPrompt = sanitizeText(prompt, MAX_PROMPT_LENGTH);
+        if (!sanitizedPrompt) return null;
+
         const requestBody = {
             model: model,
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{ parts: [{ text: sanitizedPrompt }] }]
         };
-        
-        // Add response format if specified (for JSON responses)
+
         if (responseFormat === 'json') {
             requestBody.generationConfig = { response_mime_type: "application/json" };
         }
-        
+
+        if (systemInstruction) {
+            requestBody.systemInstruction = { parts: [{ text: sanitizeText(systemInstruction, 500) }] };
+        }
+
         const response = await fetch(API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
-        
+
         if (!response.ok) {
-            const errorData = await response.json();
+            const errorData = await response.json().catch(() => ({}));
             console.error('Gemini API error:', errorData);
             return null;
         }
-        
+
         const data = await response.json();
-        
-        // Extract text from response
-        if (data.candidates && data.candidates[0] && 
-            data.candidates[0].content && data.candidates[0].content.parts) {
+
+        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
             return data.candidates[0].content.parts[0].text;
         }
-        
+
         return null;
     } catch (error) {
         console.error('Gemini API call failed:', error);
@@ -97,16 +139,9 @@ async function callGeminiAPI(prompt, model = DEFAULT_MODEL, responseFormat = nul
 // ============================================
 
 export async function fetchGeminiFact() {
-    const prompt = "Provide one short, fascinating fact about the history of elections in India (max 15 words).";
-    
+    const prompt = "Provide one short, fascinating fact about the history of elections in India (max 20 words). Do not use markdown.";
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
-    // Return random fallback fact
-    return FALLBACK_FACTS[Math.floor(Math.random() * FALLBACK_FACTS.length)];
+    return result?.trim() || FALLBACK_FACTS[Math.floor(Math.random() * FALLBACK_FACTS.length)];
 }
 
 // ============================================
@@ -119,29 +154,22 @@ export async function fetchGeminiNews() {
         const newsRes = await fetch('https://newsapi.org/v2/top-headlines?country=in&category=politics&pageSize=8&apiKey=02b695c0d7d54963b2891a6d41f71048');
         if (newsRes.ok) {
             const newsData = await newsRes.json();
-            if (newsData.articles && newsData.articles.length > 0) {
+            if (newsData.articles?.length > 0) {
                 const headlines = newsData.articles
                     .filter(a => a.title && !a.title.includes('[Removed]'))
                     .map(a => a.title)
                     .slice(0, 6)
                     .join(' ⚡ ');
-                return '🔴 ' + headlines;
+                if (headlines) return '🔴 ' + headlines;
             }
         }
     } catch (e) {
         console.log('NewsAPI failed, falling back to Gemini');
     }
-    
-    // Fallback to Gemini
-    const prompt = "Generate 6 realistic current Indian election/politics news headlines for today. Format as single line separated by ' ⚡ '. No quotes. Focus on ECI, voter turnout, political parties.";
-    
+
+    const prompt = "Generate 6 realistic current Indian election/politics news headlines for today. Format as single line separated by ' ⚡ '. No quotes or markdown. Focus on ECI, voter turnout, political parties.";
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
-    return FALLBACK_NEWS[0];
+    return result?.trim() || FALLBACK_NEWS[0];
 }
 
 // ============================================
@@ -149,34 +177,26 @@ export async function fetchGeminiNews() {
 // ============================================
 
 export async function fetchGeminiQuiz() {
-    const prompt = `Generate a JSON object with exactly 3 multiple-choice quiz questions specifically about the Indian Election Process — covering topics like voter registration (Form 6, EPIC card), polling day procedures (EVM, VVPAT, indelible ink, Model Code of Conduct), historical elections (1952, voter turnout facts), and constitutional provisions (Article 324, 61st Amendment). 
-    
-JSON format: {"questions": [{"q": "Question text?", "options": ["A", "B", "C", "D"], "answer": 1, "explanation": "Why the correct answer is right"}]}. 
-    
-The answer field is the 0-based index of the correct option. Questions should educate players about the election process they are simulating. Keep each question concise.`;
-    
+    const prompt = `Generate a JSON object with exactly 3 multiple-choice quiz questions specifically about the Indian Election Process — covering topics like voter registration (Form 6, EPIC card), polling day procedures (EVM, VVPAT, indelible ink, Model Code of Conduct), historical elections (1952, voter turnout facts), and constitutional provisions (Article 324, 61st Amendment).
+
+JSON format: {"questions": [{"q": "Question text?", "options": ["A", "B", "C", "D"], "answer": 1, "explanation": "Why the correct answer is right"}]}.
+
+The answer field is the 0-based index of the correct option. Questions should educate players about the election process they are simulating. Keep each question concise. Return only valid JSON, no markdown.`;
+
     const result = await callGeminiAPI(prompt, DEFAULT_MODEL, 'json');
-    
+
     if (result) {
         try {
-            // Clean up the response (remove markdown code blocks if present)
-            let cleanJson = result;
-            if (cleanJson.includes('```json')) {
-                cleanJson = cleanJson.replace(/```json\n/g, '').replace(/```\n?/g, '');
-            } else if (cleanJson.includes('```')) {
-                cleanJson = cleanJson.replace(/```/g, '');
-            }
-            
+            let cleanJson = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             const parsed = JSON.parse(cleanJson);
-            if (parsed.questions && parsed.questions.length === 3) {
+            if (Array.isArray(parsed.questions) && parsed.questions.length === 3) {
                 return parsed.questions;
             }
         } catch (e) {
             console.error('Failed to parse quiz JSON:', e);
         }
     }
-    
-    // Return fallback quiz
+
     return FALLBACK_QUIZ;
 }
 
@@ -185,15 +205,12 @@ The answer field is the 0-based index of the correct option. Questions should ed
 // ============================================
 
 export async function fetchGeminiDialogue(npcName, playerName, playerState) {
-    const prompt = `You are a ${npcName} in an Indian Election educational RPG game called DEMOKRATIC. Keep your response under 35 words. Give helpful, encouraging civic advice to a player named ${playerName} from ${playerState}. Be warm and friendly.`;
-    
+    const safeName = sanitizeText(playerName, 30);
+    const safeState = sanitizeText(playerState, 20);
+    const prompt = `You are a ${npcName} in an Indian Election educational RPG game called DEMOKRATIC. Keep your response under 35 words. Give helpful, encouraging civic advice to a player named ${safeName} from ${safeState}. Be warm and friendly. No markdown.`;
+
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
-    return "Vote responsibly! Every vote counts in building our nation's future. 🇮🇳";
+    return result?.trim() || "Vote responsibly! Every vote counts in building our nation's future. 🇮🇳";
 }
 
 // ============================================
@@ -201,15 +218,12 @@ export async function fetchGeminiDialogue(npcName, playerName, playerState) {
 // ============================================
 
 export async function fetchGeminiElderDialogue(playerName, playerState) {
-    const prompt = `You are an elderly Indian citizen, aged 75, who has voted in every election since 1952. Share one short (under 35 words), personal, and inspiring story or memory about Indian elections — like the first time you voted, or a historic election you witnessed. Speak warmly in first person. Player's name: ${playerName} from ${playerState}.`;
-    
+    const safeName = sanitizeText(playerName, 30);
+    const safeState = sanitizeText(playerState, 20);
+    const prompt = `You are an elderly Indian citizen, aged 75, who has voted in every election since 1952. Share one short (under 35 words), personal, and inspiring story or memory about Indian elections. Speak warmly in first person. Player's name: ${safeName} from ${safeState}. No markdown.`;
+
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
-    return "Beta, I've voted since 1952 — 18 elections! Each vote felt like a prayer for India's future. Never miss yours. 🙏";
+    return result?.trim() || "Beta, I've voted since 1952 — 18 elections! Each vote felt like a prayer for India's future. Never miss yours. 🙏";
 }
 
 // ============================================
@@ -220,19 +234,16 @@ export async function fetchGeminiReport(query = null, type = 'report') {
     if (type === 'diya') {
         return await fetchGeminiDiya(query);
     }
-    
-    const minutes = Math.floor(window.timeInSeconds / 60);
-    const seconds = window.timeInSeconds % 60;
-    
-    const prompt = `The player just completed a voting education game called DEMOKRATIC in ${minutes}m ${seconds}s. They are ${player.name} from ${player.state}. They scored ${player.quizScore}/3 in the civics quiz and reached Level ${player.level} (out of 5). Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis. Make it personal and encouraging.`;
-    
+
+    const minutes = Math.floor((window.timeInSeconds || 0) / 60);
+    const seconds = (window.timeInSeconds || 0) % 60;
+    const safeName = sanitizeText(player.name || 'Citizen', 30);
+    const safeState = sanitizeText(player.state || 'India', 20);
+
+    const prompt = `The player just completed a voting education game called DEMOKRATIC in ${minutes}m ${seconds}s. They are ${safeName} from ${safeState}. They scored ${player.quizScore || 0}/3 in the civics quiz and reached Level ${player.level || 1} (out of 5). Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis. Make it personal and encouraging. No markdown headings.`;
+
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
-    return "Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. You've learned about voter registration, EVM voting, and the importance of every single vote. Keep the spirit of democracy alive! 🇮🇳🗳️";
+    return result?.trim() || "Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. You've learned about voter registration, EVM voting, and the importance of every single vote. Keep the spirit of democracy alive! 🇮🇳🗳️";
 }
 
 // ============================================
@@ -240,44 +251,43 @@ export async function fetchGeminiReport(query = null, type = 'report') {
 // ============================================
 
 export async function fetchGeminiDiya(userMessage) {
-    // First, check for local keyword matches (faster, saves API quota)
-    const lowerMsg = userMessage.toLowerCase();
-    const playerName = player.name;
-    const playerState = player.state;
-    
+    if (!userMessage || typeof userMessage !== 'string') {
+        return getRandomFallbackResponse();
+    }
+
+    const safeMsg = sanitizeText(userMessage, MAX_USER_MSG_LENGTH);
+    const lowerMsg = safeMsg.toLowerCase();
+
+    // Check for local keyword matches first (faster, saves API quota)
     for (const [keyword, answer] of Object.entries(LOCAL_DIYA_ANSWERS)) {
         if (lowerMsg.includes(keyword)) {
             return answer;
         }
     }
-    
-    // If no local match, try API
-    const prompt = userMessage;
-    
-    const systemInstruction = `You are DIYA (Democratic India Your Assistant), an expert, friendly AI guide on Indian elections. The player is ${playerName} from ${playerState}. Keep answers concise (2-3 sentences max), helpful, and encouraging. Use emojis occasionally. If asked something outside Indian elections, politely redirect to election topics.`;
-    
+
+    const safeName = sanitizeText(player.name || 'Citizen', 30);
+    const safeState = sanitizeText(player.state || 'India', 20);
+    const systemInstruction = `You are DIYA (Democratic India Your Assistant), an expert, friendly AI guide on Indian elections. The player is ${safeName} from ${safeState}. Keep answers concise (2-3 sentences max), helpful, and encouraging. Use emojis occasionally. If asked something outside Indian elections, politely redirect to election topics. No markdown.`;
+
     try {
         const response = await fetch(API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: DEFAULT_MODEL,
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: safeMsg }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] }
             })
         });
-        
-        if (!response.ok) {
-            throw new Error('API request failed');
-        }
-        
+
+        if (!response.ok) throw new Error('API request failed');
+
         const data = await response.json();
-        
-        if (data.candidates && data.candidates[0] && 
-            data.candidates[0].content && data.candidates[0].content.parts) {
+
+        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
             return data.candidates[0].content.parts[0].text;
         }
-        
+
         return getRandomFallbackResponse();
     } catch (error) {
         console.error('DIYA API error:', error);
@@ -288,7 +298,7 @@ export async function fetchGeminiDiya(userMessage) {
 function getRandomFallbackResponse() {
     const fallbacks = [
         "I'm here to help with Indian election information! Try asking about voter registration, EVMs, NOTA, or state elections. 🙏",
-        "Great question! For detailed info, check the Election Commission of India's official website. I'm still learning! 📚",
+        "Great question! For detailed info, check the Election Commission of India's official website at eci.gov.in. 📚",
         "That's an important topic! The Election Commission of India has excellent resources on this. Keep learning about democracy! 🇮🇳",
         "I appreciate your curiosity! Every question about elections helps strengthen our democracy. What else would you like to know? 🗳️"
     ];
@@ -300,14 +310,12 @@ function getRandomFallbackResponse() {
 // ============================================
 
 export async function getGeminiHint(currentQuest, currentStepText) {
-    const prompt = `Player is playing an election education game called DEMOKRATIC. They are on Quest ${currentQuest}, current step: "${currentStepText}". Keep response under 15 words. Suggest what to do playfully and encouragingly.`;
-    
+    const safeStep = sanitizeText(currentStepText, 100);
+    const prompt = `Player is playing an election education game called DEMOKRATIC. They are on Quest ${currentQuest}, current step: "${safeStep}". Keep response under 15 words. Suggest what to do playfully and encouragingly. No markdown.`;
+
     const result = await callGeminiAPI(prompt);
-    
-    if (result) {
-        return result.trim();
-    }
-    
+    if (result) return result.trim();
+
     const hintFallbacks = [
         "Check your quest panel for next steps! 📋",
         "Try talking to nearby NPCs for clues! 💬",
@@ -315,7 +323,7 @@ export async function getGeminiHint(currentQuest, currentStepText) {
         "Complete each quest step in order! ✅",
         "Ask DIYA for help using the chat button! 🤖"
     ];
-    
+
     return hintFallbacks[Math.floor(Math.random() * hintFallbacks.length)];
 }
 

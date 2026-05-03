@@ -44,7 +44,7 @@ export function showEVM() {
                 : `<span style="font-size:22px;">${c.symbol}</span>`;
             
             html += `
-                <div class="evm-cand" id="cand-${c.id}" onclick="selectCandidate(${c.id})" style="border-left-color:${c.color};">
+                <div class="evm-cand" id="cand-${c.id}" data-candidate-id="${c.id}" tabindex="0" role="button" aria-label="Select candidate ${c.name} from ${c.party}" style="border-left-color:${c.color}; cursor:pointer;">
                     <div style="font-size:13px; width:30px; text-align:center; color:#999; font-weight:bold;">${idx + 1}</div>
                     <div style="flex:1;">
                         <div style="font-weight:800; font-family:'Nunito',sans-serif;">${c.name}</div>
@@ -54,7 +54,30 @@ export function showEVM() {
                     <div class="evm-btn"></div>
                 </div>`;
         });
+        // Add NOTA option
+        html += `
+            <div class="evm-cand" id="cand-0" data-candidate-id="0" tabindex="0" role="button" aria-label="Select NOTA - None of the Above" style="border-left-color:#555; cursor:pointer;">
+                <div style="font-size:13px; width:30px; text-align:center; color:#999; font-weight:bold;">${candidates.length + 1}</div>
+                <div style="flex:1;">
+                    <div style="font-weight:800; font-family:'Nunito',sans-serif;">NOTA</div>
+                    <div style="font-size:11px; color:#7f8c8d;">None of the Above</div>
+                </div>
+                <div style="width:50px; text-align:center; display:flex; align-items:center; justify-content:center;"><svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="17" fill="#555" stroke="#fff" stroke-width="1"/><text x="18" y="24" text-anchor="middle" font-size="16">❌</text></svg></div>
+                <div class="evm-btn"></div>
+            </div>`;
         candidatesEl.innerHTML = html;
+        
+        // Attach event listeners via delegation (no inline onclick)
+        candidatesEl.addEventListener('click', (e) => {
+            const cand = e.target.closest('[data-candidate-id]');
+            if (cand) selectCandidate(parseInt(cand.dataset.candidateId));
+        });
+        candidatesEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                const cand = e.target.closest('[data-candidate-id]');
+                if (cand) { e.preventDefault(); selectCandidate(parseInt(cand.dataset.candidateId)); }
+            }
+        });
     }
     
     if (castBtn) {
@@ -165,9 +188,12 @@ function showVVPATSlip(cand) {
         <hr style="border:none; border-top:1px solid #ccc; margin:6px 0;">
         <div style="font-size:9px; color:#999;">TIME: ${new Date().toLocaleTimeString()}</div>
         <div style="font-size:9px; color:#999; margin-bottom:6px;">BOOTH: STATION A</div>
-        <button onclick="downloadVVPATSlip()" style="background:#F4A355; border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer; font-weight:700; color:#0E1318; display:flex; align-items:center; gap:5px; margin:0 auto;">📥 Download Slip</button>`;
+        <button id="vvpat-download-btn" aria-label="Download your VVPAT slip as image" style="background:#F4A355; border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer; font-weight:700; color:#0E1318; display:flex; align-items:center; gap:5px; margin:0 auto;">📥 Download Slip</button>`;
     
     slip.style.bottom = '20px';
+    // Attach download listener without inline onclick
+    const dlBtn = slip.querySelector('#vvpat-download-btn');
+    if (dlBtn) dlBtn.addEventListener('click', () => downloadVVPATSlip());
 }
 
 /**

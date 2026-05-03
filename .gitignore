@@ -1,3 +1,30 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Environment variables (NEVER commit these)
 .env
-node_modules
+.env.local
+.env.production
+
+# Build artifacts
+dist/
+build/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+
+# Logs
+logs/
+*.log

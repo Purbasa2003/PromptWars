@@ -1,20 +1,33 @@
 {
   "name": "demokratic",
   "version": "2.0.0",
-  "description": "DEMOKRATIC — The Voting Adventure World. An immersive RPG for Indian election education.",
+  "description": "DEMOKRATIC \u2014 The Voting Adventure World. An immersive RPG for Indian election education.",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "lint": "node --check server.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Purbasa2003/PromptWars.git"
   },
-  "keywords": ["india", "election", "education", "rpg", "civic"],
-  "author": "",
+  "keywords": [
+    "india",
+    "election",
+    "education",
+    "rpg",
+    "civic",
+    "democracy",
+    "gemini-ai",
+    "firebase",
+    "google-cloud-run"
+  ],
+  "author": "DEMOKRATIC Team",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.16.0",
@@ -26,5 +39,8 @@
     "@jest/globals": "^30.3.0",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

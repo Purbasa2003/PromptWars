@@ -264,6 +264,8 @@ export function setCurrentQuest(questNum) {
 }
 
 export function addXP(amount) {
+    // Guard: only positive integers advance game state
+    if (typeof amount !== 'number' || amount <= 0) return false;
     player.xp += amount;
     let nextThreshold = LEVEL_THRESHOLDS[Math.min(player.level, LEVEL_THRESHOLDS.length - 1)];
     if (player.xp >= nextThreshold && player.level < LEVEL_THRESHOLDS.length) {
@@ -285,7 +287,7 @@ export function completeQuestStep(questNum, stepNum) {
 }
 
 export function getCandidates() {
-    return STATE_PARTIES[player.state] || DEFAULT_PARTIES;
+    return STATE_PARTIES[player.state || ''] || DEFAULT_PARTIES;
 }
 
 export function setSelectedCandidate(id) {
