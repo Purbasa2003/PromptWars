@@ -1612,7 +1612,7 @@
                         <button onclick="sendDiyaMessage()"
                             style="background:var(--saffron);border:none;border-radius:8px;padding:10px 15px;cursor:pointer;color:#000;font-weight:bold;">➤</button>
                     </div>
-                    <div style="text-align:center;font-size:9px;color:#555;margin-top:6px;">✨ Powered by Claude AI</div>
+                    <div style="text-align:center;font-size:9px;color:#555;margin-top:6px;">✨ Powered by Gemini AI</div>
                 </div>
             </div>
 
@@ -3115,20 +3115,19 @@
             appendDiyaMsg('user', msg);
             appendDiyaMsg('bot', '🙏 Thinking...');
             try {
-                const res = await fetch('https://api.anthropic.com/v1/messages', {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: 'claude-sonnet-4-20250514',
-                        max_tokens: 1000,
-                        system: `You are DIYA (Democratic India Your Assistant), an expert and enthusiastic AI guide on Indian elections, voting rights, civic duties, and the Indian Constitution. You speak warmly, use relevant emojis, and give accurate, concise answers. The player is named ${player.name} and is from ${player.state}. Always connect answers to real Indian election facts.`,
-                        messages: [{ role: 'user', content: msg }]
+                        systemInstruction: { parts: [{ text: `You are DIYA (Democratic India Your Assistant), an expert and enthusiastic AI guide on Indian elections, voting rights, civic duties, and the Indian Constitution. You speak warmly, use relevant emojis, and give accurate, concise answers. The player is named ${player.name} and is from ${player.state}. Always connect answers to real Indian election facts.` }] },
+                        contents: [{ parts: [{ text: msg }] }]
                     })
                 });
                 const d = await res.json();
                 const lastBot = document.querySelector('#diya-messages .diya-bot-last');
                 if (lastBot) lastBot.remove();
-                appendDiyaMsg('bot', d.content[0].text.trim());
+                const responseText = d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts ? d.candidates[0].content.parts[0].text : '🙏 I am having trouble connecting. Please try again!';
+                appendDiyaMsg('bot', responseText.trim());
             } catch (e) {
                 const lastBot = document.querySelector('#diya-messages .diya-bot-last');
                 if (lastBot) lastBot.remove();
@@ -4087,7 +4086,7 @@
             ctx.fillStyle = 'rgba(19,136,8,0.3)';
             ctx.beginPath(); ctx.roundRect(50, 420, w - 100, 34, 6); ctx.fill();
             ctx.fillStyle = '#7AB86A'; ctx.font = 'bold 11px Arial';
-            ctx.fillText('IN  ISSUED BY DEMOKRATIC • POWERED BY CLAUDE AI', w / 2, 440);
+            ctx.fillText('IN  ISSUED BY DEMOKRATIC • POWERED BY GEMINI AI', w / 2, 440);
             // Download
             const link = document.createElement('a');
             link.download = 'DemoKrasi-I-Voted-' + (player.name || 'Citizen') + '.png';
@@ -4351,12 +4350,13 @@
             content.classList.add('shimmer-text');
             document.getElementById('btn-download').style.display = 'none';
             try {
-                const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: `The player just completed a voting education game in ${Math.floor(timeInSeconds / 60)}m ${timeInSeconds % 60}s. They are ${player.name} from ${player.state}. They scored ${player.quizScore}/3 in the civics quiz and reached Level ${player.level}. Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis.` }] }) });
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: `The player just completed a voting education game in ${Math.floor(timeInSeconds / 60)}m ${timeInSeconds % 60}s. They are ${player.name} from ${player.state}. They scored ${player.quizScore}/3 in the civics quiz and reached Level ${player.level}. Generate a congratulatory 3-paragraph Voter Education Report covering what they learned about the Indian democratic process. Inspiring tone, use emojis.` }] }] }) });
                 const d = await res.json();
                 content.classList.remove('shimmer-text');
                 content.style.fontWeight = 'normal';
                 content.style.textAlign = 'left';
-                content.innerHTML = d.content[0].text.replace(/\n/g, '<br>');
+                const reportText = d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts ? d.candidates[0].content.parts[0].text : 'Congratulations on fulfilling your democratic duty! Your participation strengthens the foundation of our great nation. 🇮🇳';
+                content.innerHTML = reportText.replace(/\n/g, '<br>');
                 document.getElementById('btn-download').style.display = 'flex';
             } catch (e) {
                 content.classList.remove('shimmer-text');
